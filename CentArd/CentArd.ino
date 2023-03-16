@@ -4,7 +4,7 @@
 // MOSI: pin 11
 // MISO: pin 12
 // CLK:  pin 13
-// CS:   pin 4
+// CS:   pin 3
 
 // LCD pinout:
 // EN: pin A7
@@ -44,8 +44,8 @@ void setup()
   // Initialize SD card
   Serial.println("Init SD");
   pinMode(53, OUTPUT);  // HW CS pin, init it just in case
-  pinMode(4, OUTPUT);
-  if ( !SD.begin(4) ) 
+  pinMode(3, OUTPUT);
+  if ( !SD.begin(3) ) 
   {
     Serial.println("SD Init Failed");
     lcd.print("! No SD card !");

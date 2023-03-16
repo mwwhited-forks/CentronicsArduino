@@ -4,7 +4,7 @@ The problem I am typically having (and probably other users of these antique too
 Fear no more - Centronics printer emulator is to the rescue! It saves whatever it sees on the parallel port to the file on the SD card. When your instrument thinks that it send screensnot to the printer it actually sends it to the SD card. After that you can use your favorite viewer to view/print this file. This emulator can be built in probably less than an hour, using readily available parts. It built around Arduino Mega board with SD card and LCD modules.
 
 ## SD card pinout
-I did not have SD card breakout board, so I used Ethrenet shield, witch happened to have microSD card connector. I don't remember where exactly I got this shield from, but it seems to be pretty standard part. For example this one looks identical to mine: [Ethrenet shield](https://www.ebay.com/itm/Ethernet-Shield-Lan-W5100-For-Arduino-Board-UNO-R3-ATMega-328-MEGA-1280-2560/322267901919)
+I did not have SD card breakout board, so I used Ethernet shield, witch happened to have microSD card connector. I don't remember where exactly I got this shield from, but it seems to be pretty standard part. For example this one looks identical to mine: [Ethernet shield](https://www.ebay.com/itm/Ethernet-Shield-Lan-W5100-For-Arduino-Board-UNO-R3-ATMega-328-MEGA-1280-2560/322267901919)
 This shield uses the following pins for the SD card communication:
 
 | SD card pin name | Arduino pin |
@@ -66,3 +66,8 @@ To view HP_GL files I am using free and open-source [HP-GL Viewer](http://servic
 RLE is a standard bitmap, you should be able to open it with Microsoft Paint or any other graphic editor.
 
 Here is a quick demonstration video: https://youtu.be/vRhbX8HyUxA
+
+## Notes
+
+* [Arduino SD Library](https://www.arduino.cc/reference/en/libraries/sd/)
+* [SD Card with Logic Level hookup](https://learn.sparkfun.com/tutorials/microsd-shield-and-sd-breakout-hookup-guide#sd-card-breakout-boards)
