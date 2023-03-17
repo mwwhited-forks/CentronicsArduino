@@ -27,18 +27,29 @@
 
 // 10s timeout before considering the print completed
 #define TIMEOUT_MS 10000
+const int serialPortSpeed = 115200;
+
+bool init_complete = false;
+long last_update;
+
+bool print_in_progress = false;
+bool data_ready = false;
+byte data = 0;
+byte buff[512];
+int buff_index = 0;
+long file_size = 0;
 
 // Global variables/flags
 #if defined(__ENABLE_LCD)
 LiquidCrystal lcd(8, 9, 4, 5, 6, 7);  // RS, EN, D4, D5, D6, D7
 #endif
-const int serialPortSpeed = 115200;
 
 #if defined(__ENABLE_SDCARD)
 //SD card must only be used when LCD is disabled
 const int sdcardPin = 4;  //SD Card uses SPI pins with CS below 
 #endif
 
+#if defined(__ENABLE_PARALLEL)
 #if defined(__BOARD_UNO)  
   // const int parallelPortErrorPin = 22; //fixed high
   // const int parallelPortSelectPin = 24; // fixed high
@@ -56,15 +67,7 @@ const int sdcardPin = 4;  //SD Card uses SPI pins with CS below
   const int parallelPortBusyPin = 28; //toggle status
   const int parallelPortAckPin = 30; //toggle confirm
 #endif
-
-bool init_complete = false;
-bool print_in_progress = false;
-bool data_ready = false;
-byte data = 0;
-byte buff[512];
-int buff_index = 0;
-long last_update;
-long file_size = 0;
+#endif
 
 #if defined(__ENABLE_SDCARD)  
 File current_file;
@@ -109,6 +112,7 @@ void initLcdDisplay() {
 }
 #endif
 
+#if defined(__ENABLE_PARALLEL)
 void initParallelPort() {
   // Configure pins
   pinMode(parallelPortStrobePin, INPUT_PULLUP); // Strobe - normally high
@@ -140,6 +144,7 @@ void initParallelPort() {
   pinMode(parallelPortDataPins[6], INPUT_PULLUP);  // D6
   pinMode(parallelPortDataPins[7], INPUT_PULLUP);  // D7
 }
+#endif
 
 void setup() 
 {
@@ -150,7 +155,9 @@ void setup()
 #if defined(__ENABLE_SDCARD) 
   initSdCard();
 #endif
+#if defined(__ENABLE_PARALLEL)
   initParallelPort();
+#endif
       
   // Update timeout
   last_update = millis();
@@ -170,12 +177,14 @@ void loop()
     // Reset data ready flag
     data_ready = false;
     
+#if defined(__ENABLE_PARALLEL)
     // Ack byte, reset busy
     digitalWrite(parallelPortAckPin, false);  // ACK
     delayMicroseconds(7);
     digitalWrite(parallelPortBusyPin, false);  // BUSY
     delayMicroseconds(5);
     digitalWrite(parallelPortAckPin, true);   // ACK
+  #endif
 
     // Reset timeout
     last_update = millis();
@@ -211,7 +220,7 @@ void loop()
     WriteToFile(buff, sizeof(buff));   
 #endif
     file_size += buff_index - 1;
-    buff_index = 0;    
+    buff_index = 0;  
 
 #if defined(__ENABLE_LCD)
     // Update LCD
@@ -220,7 +229,7 @@ void loop()
     lcd.print(file_size);
     lcd.print("B");   
 #endif
-  }
+  }  
 
   // Timeout
   if ( print_in_progress && (millis() > (last_update + TIMEOUT_MS)) )
@@ -290,6 +299,7 @@ void WriteToFile(byte* b, int b_size)
 }
 #endif
 
+#if defined(__ENABLE_PARALLEL)
 // Strobe pin on falling edge interrupt
 void StrobeFallingEdge()
 {
@@ -315,3 +325,4 @@ void StrobeFallingEdge()
   // Set ready bit
   data_ready = true;    
 }
+#endif
