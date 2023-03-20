@@ -1,6 +1,7 @@
-# Centronics (Parallell Interface) Printer Emulator 
+# Centronics (Parallell Interface) Printer Emulator
+
 It is not uncommon for electronic enthusiast to use an outdated test gears in their labs. Actually it is pretty common even for companies to rely on vintage instruments born in 80s/90s/00s. There is probably a good reason for it, these relics are usually moderately priced and indestructible. They are extremely well built, can withstand hurricanes and small nuclear explosions. These tools are obviously outdated and lacking modern features, but pretty adequate for most cases.
-The problem I am typically having (and probably other users of these antique tools) is that I can't easily take a screenshot of the instrument. You can obviously take a picture of an old CRT screen, but it just doesn't look professional. Some instruments have GPIB/HP-IB interfaces and if you are a lucky owner of GPIB adapter you can use [HP 7470A Emulator](http://www.ke5fx.com/gpib/7470.htm) emulate printer over GPIB. But what if you don't have GPIB adapter handy or your instrument don't have a GPIB port? 
+The problem I am typically having (and probably other users of these antique tools) is that I can't easily take a screenshot of the instrument. You can obviously take a picture of an old CRT screen, but it just doesn't look professional. Some instruments have GPIB/HP-IB interfaces and if you are a lucky owner of GPIB adapter you can use [HP 7470A Emulator](http://www.ke5fx.com/gpib/7470.htm) emulate printer over GPIB. But what if you don't have GPIB adapter handy or your instrument don't have a GPIB port?
 Fear no more - Centronics printer emulator is to the rescue! It saves whatever it sees on the parallel port to the file on the SD card. When your instrument thinks that it send screensnot to the printer it actually sends it to the SD card. After that you can use your favorite viewer to view/print this file. This emulator can be built in probably less than an hour, using readily available parts. It built around Arduino Mega board with SD card and LCD modules.
 
 ## SD card pinout
@@ -15,10 +16,9 @@ This shield uses the following pins for the SD card communication:
 | CS               | pin 4       |
 | GND              | GND         |
 
-
 ## LCD pinout
 I used the simples LCD module I can find in the random parts pile. It is 2x16 display module. Again, I am not 100% sure, but this one looks identical to mine: [LCD](https://www.ebay.com/itm/HOBBY-COMPONENTS-UK-LCD-1602-16x2-Keypad-Shield-For-Arduino-LA/372201166520) 
-Only teh following pins are connected to the LCD shield. I left other pins dicsonnected:
+Only the following pins are connected to the LCD shield. I left other pins disconnected:
 
 | LCD pin name | Arduino pin number |
 |--------------|--------------------|
@@ -30,8 +30,6 @@ Only teh following pins are connected to the LCD shield. I left other pins dicso
 | D7           | pin 7              |
 
 Here are a few pictures on the shields stackup:
-
-
 
 ## Parallel interface
 Centronics parallel interface is pretty old and it was well documented in nineties, so it was easy to figure out how to connect Arduino to it.
@@ -71,3 +69,172 @@ Here is a quick demonstration video: https://youtu.be/vRhbX8HyUxA
 
 * [Arduino SD Library](https://www.arduino.cc/reference/en/libraries/sd/)
 * [SD Card with Logic Level hookup](https://learn.sparkfun.com/tutorials/microsd-shield-and-sd-breakout-hookup-guide#sd-card-breakout-boards)
+
+* Remove D10 from LCD shield, could cause long term damage to ATMega2560
+
+## Timing Diagrams
+
+### Parallel Port
+
+```plantuml
+<style>
+timingDiagram {
+  .output {
+    LineColor lightGreen
+  }
+  .input {
+    LineColor lightBlue
+    BackgroundColor lightBlue
+  }
+  .memory {
+    LineColor lightCoral
+    BackgroundColor lightCoral
+  }
+}
+</style>
+
+binary  "/Strobe"        as Strobe       <<input>>
+concise "Data Bits 0..7" as Data         <<input>>
+binary  "/Acknowledge"   as Ack          <<output>>
+binary  "Busy"           as Busy         <<output>>
+binary  "Paper Out"      as PaperOut     <<output>>
+binary  "Select"         as Select       <<output>>
+binary  "/Auto Feed"     as AutoFeed     <<input>>
+binary  "/Error"         as Error        <<output>>
+binary  "/Initialize"    as Init         <<input>>
+binary  "Select In"      as SelectIn     <<input>>
+ 
+concise "Buffer"         as RingBuffer   <<memory>>
+concise "Read Index"     as BufferIndex  <<memory>>
+
+Strobe is high
+Data is ""
+AutoFeed is low
+Init is low
+
+Error is high
+Select is high
+PaperOut is low
+Busy is low
+Ack is high
+
+RingBuffer is ""
+BufferIndex is 0
+
+@0 as :set_data
+Data is 0xAC
+
+@1 as :strobe_pulse
+Strobe is low
+
+@2 as :strobe_reset
+Strobe is high
+
+@3 as :start_read
+Busy is high
+
+@4 as :read_value
+RingBuffer is 0xAC
+BufferIndex is "+1"
+
+@5 as :read_ack
+Ack is low
+Busy is low
+Data is ""
+
+```
+
+## Action Sequence Diagrams
+
+### Initialize
+
+```plantuml
+
+-> printer: activate
+activate printer
+printer -> printer: +Error,+Select,-PaperOut,-Busy,+Ack
+printer -> terminal: ^Strobe,^Data
+note right: Add ^AutoFeed,^Init,^SelectIn
+deactivate printer
+
+```
+
+### On Print
+
+```plantuml
+
+loop while data
+
+-> terminal: print
+activate terminal
+terminal -> terminal: Set Data
+terminal -\ printer : -Strobe
+terminal -\ printer : +Strobe
+activate printer
+printer -\ terminal : +Busy
+alt if new
+  note right: What signals a new job?
+  printer -\ buffer : new
+  activate buffer
+end
+printer -> terminal : Get Data
+terminal --> printer : <Data>
+printer -\ buffer   : Set Value
+buffer -\ buffer    : Input Index++
+printer -\ terminal : -Ack
+printer -\ terminal : -Busy
+printer -\ terminal : +Ack
+alt if complete
+note right: What signals job complete?
+  printer -\ buffer : complete
+end
+
+end
+deactivate terminal
+deactivate printer
+
+```
+
+### On New File
+
+```plantuml
+--> disk
+activate disk
+disk -> file: check exists
+  loop do while exists
+    activate file
+    file -> file: increment name
+  end
+  file --> disk: <new name>
+  disk -> file: create <new name>
+  deactivate file
+  alt success 
+    disk --> : <file handle>
+  else fail
+    disk --> : <error>
+  end
+```
+
+### Buffer to File
+
+```plantuml
+--> buffer : full
+activate buffer
+alt if new
+  disk -\ file : new file
+  activate file
+end
+activate disk
+buffer -> file 
+loop while full
+  file -> file: write bytes
+  file -> buffer: Output Index++
+end
+
+alt if complete
+  note right: What signals a new job?
+  disk -> file: close
+  deactivate file
+end 
+deactivate buffer
+```
