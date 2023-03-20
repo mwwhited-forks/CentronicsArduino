@@ -18,7 +18,7 @@
 // Parallel Printer Pinout:
 //
 // Pin	Name	  Dir	Description	  Mega
-// 1	  /STROBE	-->	Strobe	      23
+// 1	  /STROBE	-->	Strobe	      18
 // 2	  D0	    -->	Data Bit 0	  25
 // 3	  D1	    -->	Data Bit 1	  27
 // 4	  D2	    -->	Data Bit 2	  29
@@ -44,6 +44,10 @@
 // 24	  GND	    ---	Signal Ground	GND
 // 25	  GND     ---	Signal Ground	GND
 
+/*
+https://www.tutorialspoint.com/enable-and-disable-interrupts-in-arduino
+*/
+
 #include <LiquidCrystal.h>
 #include "SdFat.h"
 
@@ -55,7 +59,7 @@
 // 1 for FAT16/FAT32, 2 for exFAT, 3 for FAT16/FAT32 and exFAT.
 #define SD_FAT_TYPE 0
 
-const uint8_t SD_CS_PIN = 4; //4;
+const uint8_t SD_CS_PIN = 10; //4;
 //
 // Pin numbers in templates must be constants.
 const uint8_t SOFT_MISO_PIN = 12;
@@ -71,8 +75,8 @@ File file;
 
 // 10s timeout before considering the print completed
 #define TIMEOUT_MS 10000
-//const long serialPortSpeed = 115200;
-const long serialPortSpeed = 2000000;
+const long serialPortSpeed = 115200;
+//const long serialPortSpeed = 2000000;
 
 bool init_complete = false;
 long last_update;
@@ -80,14 +84,15 @@ long last_update;
 bool print_in_progress = false;
 bool data_ready = false;
 byte data = 0;
-byte buff[512];
+const long buffer_Size = 512;
+byte buff[buffer_Size];
 int buff_index = 0;
 long file_size = 0;
 
 // Global variables/flags
 LiquidCrystal lcd(8, 9, 4, 5, 6, 7);  // RS, EN, D4, D5, D6, D7
 
-const int parallelPortStrobePin = 23;                             // on receive
+const int parallelPortStrobePin = 18;                             // on receive
 const int parallelPortDataPins[8] = { 25,27,29,31,33,35,37,39 };  // data in
 const int parallelPortAckPin = 41;                                // toggle confirm
 const int parallelPortBusyPin = 43;                               // toggle status
@@ -182,13 +187,14 @@ void setup() {
   init_complete = true;
 }
 
-int t = 0;
-
 void loop() {
 
   if (data_ready) {
     // Receive byte
     buff[buff_index] = data;
+        Serial.print("data_ready");
+        Serial.print(buff_index);
+        Serial.println();
     buff_index++;
 
     // Reset data ready flag
@@ -236,7 +242,7 @@ void loop() {
   }
 
   // Check buffer size
-  if (buff_index >= 512) {
+  if (buff_index >= buffer_Size) {
     // Flush buffer to file
     Serial.print(".");
     WriteToFile(buff, sizeof(buff));
@@ -253,6 +259,9 @@ void loop() {
   // Timeout
   if (print_in_progress && (millis() > (last_update + TIMEOUT_MS))) {
     Serial.print("-> TIMEOUT <-");
+    Serial.print(last_update);
+    Serial.println();
+    lcd.print("!TIMEOUT!");
     digitalWrite(parallelPortErrorPin, true);
     // Timeout. Flush the buffer to file
     if (buff_index > 0) {
@@ -282,6 +291,7 @@ void loop() {
   }
 }
 
+int x = 0;
 int CreateNewFile() {
   // Find unique file
   char fname[30];
@@ -299,7 +309,7 @@ int CreateNewFile() {
     Serial.print("init error :( ");
     sd.initErrorHalt();
   }
-
+x=0;
   file = sd.open(fname, O_RDWR | O_CREAT);
   if (file) {
     Serial.print("New file created: ");
@@ -313,6 +323,13 @@ int CreateNewFile() {
 }
 
 void WriteToFile(byte* b, int b_size) {
+    Serial.println();
+    Serial.print("write ");
+    Serial.print(millis());
+    Serial.print(" - ");
+    Serial.print(x++);
+    Serial.println();
+  x-=b_size;
   // Verify that the file is open
   if (file) {
     file.write(b, b_size);
@@ -325,17 +342,36 @@ void WriteToFile(byte* b, int b_size) {
 
 // Strobe pin on falling edge interrupt
 void StrobeFallingEdge() {
+   noInterrupts();
+    Serial.println();
+    Serial.print("strobe ");
+    Serial.print(millis());
+    Serial.print(" - ");
+    Serial.print(x++);
+    Serial.println();
+
   // Be sure that init sequence is completed
   if (!init_complete) {
+    Serial.println();
+    Serial.println("init not complete ");
     return;
   }
 
   // Set busy signal
   digitalWrite(parallelPortBusyPin, true);
+  delay(5);
 
   // Read data from port
-  data = (digitalRead(parallelPortDataPins[0]) << 0) | (digitalRead(parallelPortDataPins[1]) << 1) | (digitalRead(parallelPortDataPins[2]) << 2) | (digitalRead(parallelPortDataPins[3]) << 3) | (digitalRead(parallelPortDataPins[4]) << 4) | (digitalRead(parallelPortDataPins[5]) << 5) | (digitalRead(parallelPortDataPins[6]) << 6) | (digitalRead(parallelPortDataPins[7]) << 7);
+  data = (digitalRead(parallelPortDataPins[0]) << 0) | 
+  (digitalRead(parallelPortDataPins[1]) << 1) |
+   (digitalRead(parallelPortDataPins[2]) << 2) | 
+   (digitalRead(parallelPortDataPins[3]) << 3) | 
+   (digitalRead(parallelPortDataPins[4]) << 4) | 
+   (digitalRead(parallelPortDataPins[5]) << 5) | 
+   (digitalRead(parallelPortDataPins[6]) << 6) |
+    (digitalRead(parallelPortDataPins[7]) << 7);
 
   // Set ready bit
   data_ready = true;
+   interrupts();
 }
