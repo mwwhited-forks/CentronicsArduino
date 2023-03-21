@@ -1,6 +1,5 @@
-
-// Arduino Centronics printer capture tool
-
+// Arduino Centronics printer capture tool 
+// Using Ethernet shield with built-in SD card
 // SD card pinout:
 // MOSI: pin 11
 // MISO: pin 12
@@ -31,10 +30,10 @@
 // 11  	BUSY    <--	Busy	        43
 // 12  	PE	    <--	Paper End	    45
 // 13	  SEL    	<--	Select	      47
-// 14	  /AUTOFD	-->	Autofeed	    N/C
+// 14	  /AUTOFD	-->	Autofeed	    22
 // 15  	/ERROR	<--	Error	        24
-// 16	  /INIT	  -->	Initialize    N/C
-// 17  	/SELIN	-->	Select In	    N/C
+// 16	  /INIT	  -->	Initialize    26
+// 17  	/SELIN	-->	Select In	    28
 // 18	  GND	    ---	Signal Ground	GND
 // 19	  GND	    ---	Signal Ground	GND
 // 20	  GND	    ---	Signal Ground	GND
@@ -44,53 +43,29 @@
 // 24	  GND	    ---	Signal Ground	GND
 // 25	  GND     ---	Signal Ground	GND
 
-/*
-https://www.tutorialspoint.com/enable-and-disable-interrupts-in-arduino
-*/
-
 #include <LiquidCrystal.h>
-#include "SdFat.h"
-
-#if SPI_DRIVER_SELECT != 2
-#error SPI_DRIVER_SELECT must be two in SdFat/SdFatConfig.h
-#endif
-
-// SD_FAT_TYPE = 0 for SdFat/File as defined in SdFatConfig.h,
-// 1 for FAT16/FAT32, 2 for exFAT, 3 for FAT16/FAT32 and exFAT.
-#define SD_FAT_TYPE 0
-
-const uint8_t SD_CS_PIN = 10; //4;
-//
-// Pin numbers in templates must be constants.
-const uint8_t SOFT_MISO_PIN = 12;
-const uint8_t SOFT_MOSI_PIN = 11;
-const uint8_t SOFT_SCK_PIN = 13;
-
-// SdFat software SPI template
-SoftSpiDriver<SOFT_MISO_PIN, SOFT_MOSI_PIN, SOFT_SCK_PIN> softSpi;
-#define SD_CONFIG SdSpiConfig(SD_CS_PIN, DEDICATED_SPI, SD_SCK_MHZ(0), &softSpi)
-
-SdFat sd;
-File file;
+#include <SPI.h>
+#include <SD.h>
 
 // 10s timeout before considering the print completed
 #define TIMEOUT_MS 10000
 const long serialPortSpeed = 115200;
 //const long serialPortSpeed = 2000000;
 
+// Global variables/flags
+LiquidCrystal lcd(8, 9, 4, 5, 6, 7);  // RS, EN, D4, D5, D6, D7
 bool init_complete = false;
-long last_update;
-
 bool print_in_progress = false;
 bool data_ready = false;
 byte data = 0;
-const long buffer_Size = 512;
-byte buff[buffer_Size];
+byte control = 0;
+byte buff[512];
 int buff_index = 0;
+long last_update;
+File current_file;
 long file_size = 0;
 
-// Global variables/flags
-LiquidCrystal lcd(8, 9, 4, 5, 6, 7);  // RS, EN, D4, D5, D6, D7
+const int sdcard_cs = 10;   
 
 const int parallelPortStrobePin = 18;                             // on receive
 const int parallelPortDataPins[8] = { 25,27,29,31,33,35,37,39 };  // data in
@@ -98,54 +73,37 @@ const int parallelPortAckPin = 41;                                // toggle conf
 const int parallelPortBusyPin = 43;                               // toggle status
 const int parallelPortPaperOutPin = 45;                           // fixed low
 const int parallelPortSelectPin = 47;                             // fixed high
+const int parallelPortAutoFeedPin = 22;                           // input
 const int parallelPortErrorPin = 24;                              // fixed high
+const int parallelPortInitializePin = 26;                         // input
+const int parallelPortSelectInPin = 28;                           // input
 
-
-// const int parallelPortStrobePin = 18;                             // on receive
-// const int parallelPortDataPins[8] = { 39,41,43,45,47,49,46,46 };  // data in
-// const int parallelPortAckPin = 30;                                // toggle confirm
-// const int parallelPortBusyPin = 28;                               // toggle status
-// const int parallelPortPaperOutPin = 26;                           // fixed low
-// const int parallelPortSelectPin = 24;                             // fixed high
-// const int parallelPortErrorPin = 22;                              // fixed high
-
-void initSdCard() {
-  // Initialize SD card
-  Serial.println("Init SD");
-  lcd.clear();
-  lcd.print("--= Loading =--");
-
-  pinMode(SD_CS_PIN, OUTPUT);
-  if (!sd.begin(SD_CONFIG)) {
-    Serial.println("SD Init Failed");
-    lcd.clear();
-    lcd.print("! No SD card !");
-    sd.initErrorHalt();
-  } else {
-    Serial.println("SD Init Ok");
-    lcd.clear();
-    lcd.print("--== Ready ==--");
-  }
-}
-
-void initSerialPort() {
+void setup() 
+{
   Serial.begin(serialPortSpeed);
   delay(10);
-  Serial.println("serial init");
   Serial.println();
   Serial.println();
   Serial.println();
-}
-
-void initLcdDisplay() {
-  lcd.begin(16, 2);
+  
+  lcd.begin(16, 2);  
   delay(10);
-  lcd.clear();
-  lcd.print("--= LCD INIT =--");
-  Serial.println("lcd init");
-  Serial.println();
-}
-void initParallelPort() {
+  lcd.clear();  
+  
+  // Initialize SD card
+  Serial.println("Init SD");
+  pinMode(sdcard_cs, OUTPUT);
+  if ( !SD.begin(sdcard_cs) ) 
+  {
+    Serial.println("SD Init Failed");
+    lcd.print("! No SD card !");
+  }
+  else
+  {
+    Serial.println("SD Init Ok");
+    lcd.print("--== Ready ==--");
+  }
+  
   // Configure pins
   pinMode(parallelPortStrobePin, INPUT_PULLUP);                                               // Strobe - normally high
   attachInterrupt(digitalPinToInterrupt(parallelPortStrobePin), StrobeFallingEdge, FALLING);  // Attach to pin interrupt
@@ -173,28 +131,24 @@ void initParallelPort() {
   pinMode(parallelPortDataPins[5], INPUT_PULLUP);  // D5
   pinMode(parallelPortDataPins[6], INPUT_PULLUP);  // D6
   pinMode(parallelPortDataPins[7], INPUT_PULLUP);  // D7
-}
 
-void setup() {
-  initSerialPort();
-  initLcdDisplay();
-  initSdCard();
-  initParallelPort();
-
+  pinMode(parallelPortAutoFeedPin,   INPUT_PULLUP);
+  pinMode(parallelPortInitializePin, INPUT_PULLUP);
+  pinMode(parallelPortSelectInPin,   INPUT_PULLUP);
+    
   // Update timeout
   last_update = millis();
   Serial.println("Init Complete");
   init_complete = true;
 }
 
-void loop() {
 
-  if (data_ready) {
+void loop() 
+{
+  if (data_ready)
+  {
     // Receive byte
     buff[buff_index] = data;
-        Serial.print("data_ready");
-        Serial.print(buff_index);
-        Serial.println();
     buff_index++;
 
     // Reset data ready flag
@@ -211,43 +165,32 @@ void loop() {
     last_update = millis();
 
     // Actively printing?
-    if (!print_in_progress) {
+    if (!print_in_progress)
+    {
       // Just started printing. Create new file
-      if (CreateNewFile()) {
-        Serial.print("Receiving from printer.");
-        file_size = 0;
+      CreateNewFile();
+      Serial.print(F("Receiving from printer. "));
+      Serial.print(control, BIN);
+      Serial.print(F(" "));
+      file_size = 0;
 
-        char nameBuffer[20];
-        file.getName(nameBuffer, 20);
-
-        // Update LCD
-        lcd.clear();
-        lcd.print("Prn to:");
-        lcd.print(nameBuffer);
-      } else {
-        Serial.println("Error Creating File.");        
-        digitalWrite(parallelPortErrorPin, false);
-        lcd.clear();
-        lcd.print("--== ERROR ==--");
-        delay(5 * 1000);        
-        digitalWrite(parallelPortBusyPin, false);
-        digitalWrite(parallelPortErrorPin, true);
-        
-        sd.errorHalt(F("open failed"));
-
-        return;
-      }
+      // Update LCD
+      lcd.clear();
+      lcd.print(F("Prn to:"));
+      lcd.print(current_file.name());      
     }
     print_in_progress = true;
   }
 
   // Check buffer size
-  if (buff_index >= buffer_Size) {
+  if(buff_index >= 512)
+  {
     // Flush buffer to file
     Serial.print(".");
+    Serial.print(control, HEX);
     WriteToFile(buff, sizeof(buff));
     file_size += buff_index - 1;
-    buff_index = 0;
+    buff_index = 0;    
 
     // Update LCD
     lcd.setCursor(0, 1);
@@ -257,121 +200,97 @@ void loop() {
   }
 
   // Timeout
-  if (print_in_progress && (millis() > (last_update + TIMEOUT_MS))) {
-    Serial.print("-> TIMEOUT <-");
-    Serial.print(last_update);
-    Serial.println();
-    lcd.print("!TIMEOUT!");
-    digitalWrite(parallelPortErrorPin, true);
+  if ( print_in_progress && (millis() > (last_update + TIMEOUT_MS)) )
+  {
     // Timeout. Flush the buffer to file
-    if (buff_index > 0) {
+    if (buff_index > 0)
+    {
       WriteToFile(buff, buff_index - 1);
       file_size += buff_index - 1;
       buff_index = 0;
     }
     Serial.println(".Done");
     Serial.print("Closing file..");
-
-    file.close();
-
+    current_file.close();
     Serial.println("..Ok");
     print_in_progress = false;
-
-    char nameBuffer[20];
-    file.getName(nameBuffer, 20);
-
-    // Update LCD
 
     // Update LCD
     lcd.clear();
     lcd.print("Done: ");
-    lcd.print(nameBuffer);
-
-    //TODO: should we look at header and rename file?
-  }
+    lcd.print(current_file.name());
+  } 
 }
 
-int x = 0;
-int CreateNewFile() {
-  // Find unique file
-  char fname[30];
-  int i = 1;
-  do {
-    sprintf(fname, "sa%03d.prn", i);
+void CreateNewFile()
+{  
+  // Find unique file 
+  char fname[30];  
+  int i = 1;  
+  do
+  {
+    sprintf (fname, "sa%03d.prn", i);
     i++;
-  } while (sd.exists(fname));
+  } while(SD.exists(fname));
 
   // Found new file
   Serial.println();
-  // fname
-  
-  if (!sd.begin(SD_CONFIG)) {
-    Serial.print("init error :( ");
-    sd.initErrorHalt();
-  }
-x=0;
-  file = sd.open(fname, O_RDWR | O_CREAT);
-  if (file) {
-    Serial.print("New file created: ");
-    Serial.println(fname);
-    return -1;
-  } else {
-    Serial.print("error creating file: ");
-    Serial.println(fname);
-    return 0;
-  }
+  current_file = SD.open(fname, FILE_WRITE);
+  Serial.print("New file created: ");
+  Serial.println(fname);
 }
 
-void WriteToFile(byte* b, int b_size) {
-    Serial.println();
-    Serial.print("write ");
-    Serial.print(millis());
-    Serial.print(" - ");
-    Serial.print(x++);
-    Serial.println();
-  x-=b_size;
+
+void WriteToFile(byte* b, int b_size)
+{
   // Verify that the file is open
-  if (file) {
-    file.write(b, b_size);
-    //file.sync();
-  } else {
+  if (current_file) 
+  {
+    current_file.write(b, b_size);
+  }
+  else 
+  {
     Serial.println();
     Serial.println("Can't write to file");
   }
 }
 
+
 // Strobe pin on falling edge interrupt
-void StrobeFallingEdge() {
-   noInterrupts();
-    Serial.println();
-    Serial.print("strobe ");
-    Serial.print(millis());
-    Serial.print(" - ");
-    Serial.print(x++);
-    Serial.println();
-
+void StrobeFallingEdge()
+{
   // Be sure that init sequence is completed
-  if (!init_complete) {
-    Serial.println();
-    Serial.println("init not complete ");
-    return;
-  }
+    if (!init_complete)
+    {
+      return;
+    }
 
+    if (!digitalRead(parallelPortStrobePin))
+    {
+      return; //Note: glitch
+    }
+    
   // Set busy signal
   digitalWrite(parallelPortBusyPin, true);
   delay(5);
 
   // Read data from port
-  data = (digitalRead(parallelPortDataPins[0]) << 0) | 
-  (digitalRead(parallelPortDataPins[1]) << 1) |
-   (digitalRead(parallelPortDataPins[2]) << 2) | 
-   (digitalRead(parallelPortDataPins[3]) << 3) | 
-   (digitalRead(parallelPortDataPins[4]) << 4) | 
-   (digitalRead(parallelPortDataPins[5]) << 5) | 
-   (digitalRead(parallelPortDataPins[6]) << 6) |
-    (digitalRead(parallelPortDataPins[7]) << 7);
+  data = 
+    (digitalRead(parallelPortDataPins[0]) << 0) | 
+    (digitalRead(parallelPortDataPins[1]) << 1) |
+    (digitalRead(parallelPortDataPins[2]) << 2) | 
+    (digitalRead(parallelPortDataPins[3]) << 3) | 
+    (digitalRead(parallelPortDataPins[4]) << 4) | 
+    (digitalRead(parallelPortDataPins[5]) << 5) | 
+    (digitalRead(parallelPortDataPins[6]) << 6) |
+    (digitalRead(parallelPortDataPins[7]) << 7) ;
+
+   control = 
+    (digitalRead(parallelPortStrobePin) << 0)    | 
+    (digitalRead(parallelPortAutoFeedPin) << 1)  |
+    (digitalRead(parallelPortInitializePin) << 2)| 
+    (digitalRead(parallelPortSelectInPin) << 3);
 
   // Set ready bit
-  data_ready = true;
-   interrupts();
+  data_ready = true;    
 }
