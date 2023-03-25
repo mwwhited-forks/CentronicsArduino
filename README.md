@@ -39,8 +39,8 @@ Here are a few pictures on the shields stackup:
 
 Centronics parallel interface is pretty old and it was well documented in nineties, so it was easy to figure out how to connect Arduino to it.
 
-| Name         | DB25  | Arduino | Direction | Notes                                                                     |
-|--------------|------=|---------|---------==|---------------------------------------------------------------------------|
+| Name         | DB25  | Arduino | Direction |Notes                                                                     |
+|--------------|-------|---------|-----------|---------------------------------------------------------------------------|
 | /Strobe      | 1     | pin 18  | Input     | Pullup enabled. Attached to falling edge interrupt.                       |
 | D0           | 2     | pin 25  | Input     | Parallel data.                                                            |
 | D1           | 3     | pin 27  | Input     | Parallel data.                                                            |
@@ -272,6 +272,7 @@ The Strobe line must be wired to a pin that support hardware interrupt.
 ## Suggsted Improvements
 
 * Enable RTC (DS1307) on the DataLogger shield.  When in Idle present the time on the screen
+  * https://github.com/cvmanjoo/RTC
 * Add support for storing files on a W25Q128 (CS pin 3)
   * When SD Card is removed or used selected the files may be stored on the eeprom
   * look at using the NASA EEFS.
@@ -279,6 +280,7 @@ The Strobe line must be wired to a pin that support hardware interrupt.
   * https://github.com/slviajero/EepromFS
   * https://github.com/feilipu/avr_eefs
   * https://www.instructables.com/Introduction-to-LittleFs-Write-LittleFs-Read-Littl/
+  * https://github.com/arduino-libraries/Arduino_MKRMEM
 * The current read/write process is rather slow
   * look at upgrading to SDFat as well as using a ringbuffer for reading from the parallel poin
 * consider adding the ability to directly output the content to the serial connection

@@ -49,8 +49,8 @@
 
 // 10s timeout before considering the print completed
 #define TIMEOUT_MS 10000
-const long serialPortSpeed = 115200;
-//const long serialPortSpeed = 2000000;
+//const long serialPortSpeed = 115200;
+const long serialPortSpeed = 2000000;
 
 // Global variables/flags
 LiquidCrystal lcd(8, 9, 4, 5, 6, 7);  // RS, EN, D4, D5, D6, D7
@@ -58,10 +58,10 @@ bool init_complete = false;
 bool print_in_progress = false;
 bool data_ready = false;
 byte data = 0;
-byte control = 0;
 byte buff[512];
 int buff_index = 0;
 long last_update;
+long waiting_update;
 File current_file;
 long file_size = 0;
 
@@ -137,7 +137,7 @@ void setup()
   pinMode(parallelPortSelectInPin,   INPUT_PULLUP);
     
   // Update timeout
-  last_update = millis();
+  waiting_update = last_update = millis();
   Serial.println("Init Complete");
   init_complete = true;
 }
@@ -170,7 +170,6 @@ void loop()
       // Just started printing. Create new file
       CreateNewFile();
       Serial.print(F("Receiving from printer. "));
-      Serial.print(control, BIN);
       Serial.print(F(" "));
       file_size = 0;
 
@@ -187,7 +186,6 @@ void loop()
   {
     // Flush buffer to file
     Serial.print(".");
-    Serial.print(control, HEX);
     WriteToFile(buff, sizeof(buff));
     file_size += buff_index - 1;
     buff_index = 0;    
@@ -197,6 +195,14 @@ void loop()
     lcd.print("Size:");
     lcd.print(file_size);
     lcd.print("B");
+  }
+
+  if (print_in_progress && waiting_update + 200 < millis())
+  {
+    waiting_update = millis();
+    Serial.print("[");
+    Serial.print(getControlPins(), HEX);
+    Serial.print("]");    
   }
 
   // Timeout
@@ -285,12 +291,15 @@ void StrobeFallingEdge()
     (digitalRead(parallelPortDataPins[6]) << 6) |
     (digitalRead(parallelPortDataPins[7]) << 7) ;
 
-   control = 
+  // Set ready bit
+  data_ready = true;    
+}
+
+byte getControlPins(){
+  byte val =   
     (digitalRead(parallelPortStrobePin) << 0)    | 
     (digitalRead(parallelPortAutoFeedPin) << 1)  |
     (digitalRead(parallelPortInitializePin) << 2)| 
     (digitalRead(parallelPortSelectInPin) << 3);
-
-  // Set ready bit
-  data_ready = true;    
+  return val;
 }
