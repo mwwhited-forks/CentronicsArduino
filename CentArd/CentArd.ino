@@ -135,6 +135,10 @@ void setup()
   pinMode(parallelPortAutoFeedPin,   INPUT_PULLUP);
   pinMode(parallelPortInitializePin, INPUT_PULLUP);
   pinMode(parallelPortSelectInPin,   INPUT_PULLUP);
+  
+  // pinMode(parallelPortAutoFeedPin,   INPUT);
+  // pinMode(parallelPortInitializePin, INPUT);
+  // pinMode(parallelPortSelectInPin,   INPUT);
     
   // Update timeout
   waiting_update = last_update = millis();
